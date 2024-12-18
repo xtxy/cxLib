@@ -2,7 +2,6 @@ package jps
 
 import (
 	"cxlib/geo"
-	"cxlib/logs"
 )
 
 func KeyPath2FullPath(keyPath []string, points PointUtil) []string {
@@ -30,14 +29,14 @@ func FillPathPoint(startKey, endKey string, points PointUtil) []string {
 	deltaX := endX - startX
 	deltaY := endY - startY
 
-	var stepX int = 0
+	var stepX int64 = 0
 	if deltaX > 0 {
 		stepX = 1
 	} else if deltaX < 0 {
 		stepX = -1
 	}
 
-	var stepY int = 0
+	var stepY int64 = 0
 	if deltaY > 0 {
 		stepY = 1
 	} else if deltaY < 0 {
@@ -52,16 +51,16 @@ func FillPathPoint(startKey, endKey string, points PointUtil) []string {
 	return path
 }
 
-func RemovePathTail(path []string, end geo.Vec2Int, distanceSqr int, points PointUtil) ([]string, bool) {
+func RemovePathTail(path []string, end geo.Vec2[int64], lenSqr int64, points PointUtil) ([]string, bool) {
 	ok := false
 	index := len(path) - 1
-	pos := geo.Vec2Int{}
+	pos := geo.Vec2[int64]{}
 	for ; index >= 0; index-- {
 		x, y := points.Key2Point(path[index])
 		pos.X = x
 		pos.Y = y
 
-		if pos.DistanceSqr(end) > distanceSqr {
+		if distanceSqr(pos, end) > lenSqr {
 			break
 		}
 
@@ -76,21 +75,22 @@ func RemovePathTail(path []string, end geo.Vec2Int, distanceSqr int, points Poin
 	return path, ok
 }
 
-func dir(key, parent string, points PointUtil) (int, int) {
+func distanceSqr(v1, v2 geo.Vec2[int64]) int64 {
+	delta := v1.Sub(v2)
+	return delta.LenSqr()
+}
+
+func dir(key, parent string, points PointUtil) (int64, int64) {
 	cellX, cellY := points.Key2Point(key)
 	parentX, parentY := points.Key2Point(parent)
 
-	dx := clamp(int(cellX - parentX))
-	dy := clamp(int(cellY - parentY))
-
-	if dx == 0 && dy == 0 {
-		logs.Error("dx,dy,both are 0")
-	}
+	dx := clamp(cellX - parentX)
+	dy := clamp(cellY - parentY)
 
 	return dx, dy
 }
 
-func clamp(a int) int {
+func clamp(a int64) int64 {
 	if a > 0 {
 		return 1
 	} else if a < 0 {

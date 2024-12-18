@@ -21,8 +21,8 @@ const (
 )
 
 type PointUtil interface {
-	Point2Key(x, y int) string
-	Key2Point(string) (int, int)
+	Point2Key(x, y int64) string
+	Key2Point(string) (int64, int64)
 }
 
 type Cell struct {
@@ -153,7 +153,7 @@ func (finder *Finder) Find(startKey, endKey string, options ...FindOption) []str
 	finder.endKey = endKey
 	found := false
 	openList := []string{startKey}
-	nearestDistance := 0
+	var nearestDistance int64 = 0
 	var nearestKey string = ""
 	endPos := finder.key2Point(endKey)
 
@@ -169,7 +169,7 @@ func (finder *Finder) Find(startKey, endKey string, options ...FindOption) []str
 
 		if finder.nearest {
 			cellPos := finder.key2Point(key)
-			distanceSqr := cellPos.DistanceSqr(endPos)
+			distanceSqr := distanceSqr(cellPos, endPos)
 			if nearestDistance == 0 || distanceSqr < nearestDistance {
 				nearestDistance = distanceSqr
 				nearestKey = key
@@ -252,7 +252,7 @@ func (finder *Finder) canWalk(key string) bool {
 	return false
 }
 
-func (finder *Finder) canWalkAt(x, y int) bool {
+func (finder *Finder) canWalkAt(x, y int64) bool {
 	key := finder.pointUtil.Point2Key(x, y)
 	return finder.canWalk(key)
 }
@@ -263,7 +263,7 @@ func (finder *Finder) findDefaultNeighbors(key string, moveType int) []string {
 
 	cellPos := finder.key2Point(key)
 	// up, right, down, left
-	pos := []int{cellPos.X, cellPos.Y - 1, cellPos.X + 1, cellPos.Y, cellPos.X, cellPos.Y + 1,
+	pos := []int64{cellPos.X, cellPos.Y - 1, cellPos.X + 1, cellPos.Y, cellPos.X, cellPos.Y + 1,
 		cellPos.X - 1, cellPos.Y}
 	neighbors := make([]string, 0)
 
@@ -298,7 +298,7 @@ func (finder *Finder) findDefaultNeighbors(key string, moveType int) []string {
 	}
 
 	// leftup, rightup, rightdown, leftdown
-	pos = []int{cellPos.X - 1, cellPos.Y - 1, cellPos.X + 1, cellPos.Y - 1, cellPos.X + 1, cellPos.Y + 1,
+	pos = []int64{cellPos.X - 1, cellPos.Y - 1, cellPos.X + 1, cellPos.Y - 1, cellPos.X + 1, cellPos.Y + 1,
 		cellPos.X - 1, cellPos.Y + 1}
 
 	for k, v := range dFlags {
@@ -315,11 +315,12 @@ func (finder *Finder) findDefaultNeighbors(key string, moveType int) []string {
 	return neighbors
 }
 
-func (finder *Finder) key2Point(key string) geo.Vec2Int {
+func (finder *Finder) key2Point(key string) geo.Vec2[int64] {
 	x, y := finder.pointUtil.Key2Point(key)
-	return geo.Vec2Int{X: x, Y: y}
+	return geo.Vec2[int64]{X: int64(x), Y: int64(y)}
 }
 
-func calcG(cell, next geo.Vec2Int) uint32 {
-	return uint32(cell.DistanceSqr(next))
+func calcG(cell, next geo.Vec2[int64]) uint32 {
+	delta := cell.Sub(next)
+	return uint32(delta.LenSqr())
 }

@@ -5,71 +5,44 @@ import (
 	"time"
 )
 
-type Rect struct {
-	X      float64 `json:"x"`
-	Y      float64 `json:"y"`
-	Width  float64 `json:"width"`
-	Height float64 `json:"height"`
+type Rect[T Number] struct {
+	X      T
+	Y      T
+	Width  T
+	Height T
 }
 
-func (rect *Rect) Center() Vec2 {
-	return Vec2{
+func (rect *Rect[T]) Center() Vec2[T] {
+	return Vec2[T]{
 		X: rect.X + rect.Width/2,
 		Y: rect.Y + rect.Height/2,
 	}
 }
 
-func (rect *Rect) CenterInt() Vec2Int {
-	return Vec2Int{
-		X: int(rect.X + 0.5 + rect.Width/2),
-		Y: int(rect.Y + 0.5 + rect.Height/2),
+func (rect *Rect[T]) CenterInt() Vec2[int64] {
+	return Vec2[int64]{
+		X: int64(float64(rect.X) + 0.5 + float64(rect.Width)/2),
+		Y: int64(float64(rect.Y) + 0.5 + float64(rect.Height)/2),
 	}
 }
 
-func (rect *Rect) RandPos() Vec2 {
+func (rect *Rect[T]) RandPos() Vec2[T] {
+	r := rand.New(rand.NewSource(time.Now().UnixMilli()))
+	return Vec2[T]{
+		X: rect.X + 1 + T(r.Intn(int(rect.Width)-1)),
+		Y: rect.Y + T(1+r.Intn(int(rect.Height)-1)),
+	}
+}
+
+func (rect *Rect[T]) RandPosInt() Vec2[int64] {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return Vec2{
-		X: rect.X + float64(1+r.Intn(int(rect.Width)-1)),
-		Y: rect.Y + float64(1+r.Intn(int(rect.Height)-1)),
+	return Vec2[int64]{
+		X: int64(rect.X) + 1 + int64(r.Intn(int(rect.Width)-1)),
+		Y: int64(rect.Y) + 1 + int64(r.Intn(int(rect.Height)-1)),
 	}
 }
 
-func (rect *Rect) RandPosInt() Vec2Int {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return Vec2Int{
-		X: int(rect.X) + 1 + r.Intn(int(rect.Width)-1),
-		Y: int(rect.Y) + 1 + r.Intn(int(rect.Height)-1),
-	}
-}
-
-func (rect *Rect) Contain(pos Vec2) bool {
+func (rect *Rect[T]) Contain(pos Vec2[T]) bool {
 	return rect.X <= pos.X && rect.X+rect.Width >= pos.X &&
 		rect.Y <= pos.Y && rect.Y+rect.Height >= pos.Y
-}
-
-type RectInt struct {
-	X      int `json:"x"`
-	Y      int `json:"y"`
-	Width  int `json:"width"`
-	Height int `json:"height"`
-}
-
-func (rect *RectInt) Center() Vec2Int {
-	return Vec2Int{
-		X: int(rect.X + rect.Width/2),
-		Y: int(rect.Y + rect.Height/2),
-	}
-}
-
-func (rect *RectInt) Contain(pos Vec2Int) bool {
-	return rect.X <= pos.X && rect.X+rect.Width >= pos.X &&
-		rect.Y <= pos.Y && rect.Y+rect.Height >= pos.Y
-}
-
-func (rect *RectInt) RandPosInt() Vec2Int {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return Vec2Int{
-		X: rect.X + 1 + r.Intn(rect.Width-1),
-		Y: rect.Y + 1 + r.Intn(rect.Height-1),
-	}
 }
