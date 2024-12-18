@@ -9,16 +9,16 @@ import (
 type StrPoint struct {
 }
 
-func (sp StrPoint) Point2Key(x, y int) string {
-	return strconv.Itoa(x) + "_" + strconv.Itoa(y)
+func (sp StrPoint) Point2Key(x, y int64) string {
+	return strconv.Itoa(int(x)) + "_" + strconv.Itoa(int(y))
 }
 
-func (sp StrPoint) Key2Point(key string) (int, int) {
+func (sp StrPoint) Key2Point(key string) (int64, int64) {
 	arr := strings.Split(key, "_")
 	x, _ := strconv.Atoi(arr[0])
 	y, _ := strconv.Atoi(arr[1])
 
-	return x, y
+	return int64(x), int64(y)
 }
 
 type U32Point struct {
@@ -32,10 +32,10 @@ func (u32p U32Point) Point2Key(x, y int) string {
 	return string(slice)
 }
 
-func (u32p U32Point) Key2Point(key string) (int, int) {
+func (u32p U32Point) Key2Point(key string) (int64, int64) {
 	slice := []byte(key)
 	x := binary.LittleEndian.Uint32(slice[:4])
 	y := binary.LittleEndian.Uint32(slice[4:])
 
-	return int(x), int(y)
+	return int64(x), int64(y)
 }

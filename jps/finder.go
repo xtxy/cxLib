@@ -317,7 +317,7 @@ func (finder *Finder) findDefaultNeighbors(key string, moveType int) []string {
 
 func (finder *Finder) key2Point(key string) geo.Vec2[int64] {
 	x, y := finder.pointUtil.Key2Point(key)
-	return geo.Vec2[int64]{X: int64(x), Y: int64(y)}
+	return geo.Vec2[int64]{X: x, Y: y}
 }
 
 func calcG(cell, next geo.Vec2[int64]) uint32 {
