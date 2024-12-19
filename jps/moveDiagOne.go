@@ -1,6 +1,6 @@
 package jps
 
-import "cxlib/geo"
+import "github.com/xtxy/cxlib/geo"
 
 type jpsMoveDiagOne struct {
 	finder *Finder

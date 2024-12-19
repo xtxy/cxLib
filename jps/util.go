@@ -1,7 +1,7 @@
 package jps
 
 import (
-	"cxlib/geo"
+	"github.com/xtxy/cxlib/geo"
 )
 
 func dir(pos, parentPos geo.Vec2[int64]) (int64, int64) {

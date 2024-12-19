@@ -1,8 +1,8 @@
 package jps
 
 import (
-	"cxlib/geo"
-	"cxlib/logs"
+	"github.com/xtxy/cxlib/geo"
+	"github.com/xtxy/cxlib/logs"
 )
 
 const (
