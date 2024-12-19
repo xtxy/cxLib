@@ -1,110 +1,115 @@
 package jps
 
+import "cxlib/geo"
+
 type jpsMoveDiagNoObs struct {
-	finder    *Finder
-	pointUtil PointUtil
+	finder *Finder
 }
 
-func (jps *jpsMoveDiagNoObs) findNeighbors(key string) []string {
-	cell := jps.finder.cellMap[key]
-	cellX, cellY := jps.pointUtil.Key2Point(key)
-	parent := cell.parent
+func (jps *jpsMoveDiagNoObs) findNeighbors(pos geo.Vec2[int64]) []geo.Vec2[int64] {
+	var neighbors []geo.Vec2[int64]
+	parentPos, parentOk := jps.finder.cellMap.GetCell(pos).GetParent()
 
-	neighbors := make([]string, 0)
-
-	if parent != "" {
-		dx, dy := dir(key, parent, jps.pointUtil)
+	if parentOk {
+		dx, dy := dir(pos, parentPos)
 		if dx != 0 && dy != 0 {
-			if nKey := jps.pointUtil.Point2Key(cellX, cellY+dy); jps.finder.canWalk(nKey) {
-				neighbors = append(neighbors, nKey)
+			deltas := [12]int64{
+				0, dy, 0, dy,
+				dx, 0, dx, 0,
 			}
-			if nKey := jps.pointUtil.Point2Key(cellX+dx, cellY); jps.finder.canWalk(nKey) {
-				neighbors = append(neighbors, nKey)
-			}
-			if jps.finder.canWalkAt(cellX, cellY+dy) && jps.finder.canWalkAt(cellX+dx, cellY) {
-				neighbors = append(neighbors, jps.pointUtil.Point2Key(cellX+dx, cellY+dy))
+			flags := [2]bool{}
+
+			neighbors = jps.finder.findNeighbors(pos, deltas[:], flags[:], true)
+			if flags[0] && flags[1] {
+				neighbors = append(neighbors, geo.Vec2[int64]{X: pos.X + dx, Y: pos.Y + dy})
 			}
 		} else if dx != 0 {
-			nextOk := jps.finder.canWalkAt(cellX+dx, cellY)
-			topOk := jps.finder.canWalkAt(cellX, cellY+1)
-			bottomOk := jps.finder.canWalkAt(cellX, cellY-1)
+			deltas := [12]int64{
+				dx, 0, dx, 0,
+				0, 1, 0, 1,
+				0, -1, 0, -1,
+			}
+			flags := [3]bool{}
 
-			if nextOk {
-				neighbors = append(neighbors, jps.pointUtil.Point2Key(cellX+dx, cellY))
-				if topOk {
-					neighbors = append(neighbors, jps.pointUtil.Point2Key(cellX+dx, cellY+1))
+			neighbors = jps.finder.findNeighbors(pos, deltas[:], flags[:], true)
+
+			if flags[0] {
+				if flags[1] {
+					neighbors = append(neighbors, geo.Vec2[int64]{X: pos.X + dx, Y: pos.Y + 1})
 				}
-				if bottomOk {
-					neighbors = append(neighbors, jps.pointUtil.Point2Key(cellX+dx, cellY-1))
+				if flags[2] {
+					neighbors = append(neighbors, geo.Vec2[int64]{X: pos.X + dx, Y: pos.Y - 1})
 				}
-			}
-			if topOk {
-				neighbors = append(neighbors, jps.pointUtil.Point2Key(cellX, cellY+1))
-			}
-			if bottomOk {
-				neighbors = append(neighbors, jps.pointUtil.Point2Key(cellX, cellY-1))
 			}
 		} else {
-			nextOk := jps.finder.canWalkAt(cellX, cellY+dy)
-			rightOk := jps.finder.canWalkAt(cellX+1, cellY)
-			leftOk := jps.finder.canWalkAt(cellX-1, cellY)
+			deltas := [12]int64{
+				0, dy, 0, dy,
+				1, 0, 1, 0,
+				-1, 0, -1, 0,
+			}
+			flags := [3]bool{}
 
-			if nextOk {
-				neighbors = append(neighbors, jps.pointUtil.Point2Key(cellX, cellY+dy))
-				if rightOk {
-					neighbors = append(neighbors, jps.pointUtil.Point2Key(cellX+1, cellY+dy))
+			neighbors = jps.finder.findNeighbors(pos, deltas[:], flags[:], true)
+
+			if flags[0] {
+				if flags[1] {
+					neighbors = append(neighbors, geo.Vec2[int64]{X: pos.X + 1, Y: pos.Y + dy})
 				}
-				if leftOk {
-					neighbors = append(neighbors, jps.pointUtil.Point2Key(cellX-1, cellY+dy))
+				if flags[2] {
+					neighbors = append(neighbors, geo.Vec2[int64]{X: pos.X - 1, Y: pos.Y + dy})
 				}
-			}
-			if rightOk {
-				neighbors = append(neighbors, jps.pointUtil.Point2Key(cellX+1, cellY))
-			}
-			if leftOk {
-				neighbors = append(neighbors, jps.pointUtil.Point2Key(cellX-1, cellY))
 			}
 		}
 	} else {
-		neighbors = jps.finder.findDefaultNeighbors(key, MOVE_DIAG_NO_OBS)
+		neighbors = jps.finder.findDefaultNeighbors(pos, MOVE_DIAG_NO_OBS)
 	}
 
 	return neighbors
 }
 
-func (jps *jpsMoveDiagNoObs) jump(key, parent string) string {
-	if !jps.finder.canWalk(key) {
-		return ""
+func (jps *jpsMoveDiagNoObs) jump(pos, parent geo.Vec2[int64]) (next geo.Vec2[int64], ok bool) {
+	if !jps.finder.canWalk(pos) {
+		return
 	}
 
-	if key == jps.finder.endKey {
-		return key
+	next = pos
+
+	if pos == jps.finder.endPos {
+		ok = true
+		return
 	}
 
-	cellX, cellY := jps.pointUtil.Key2Point(key)
-	dx, dy := dir(key, parent, jps.pointUtil)
+	dx, dy := dir(pos, parent)
 	if dx != 0 && dy != 0 {
-		if jps.jump(jps.pointUtil.Point2Key(cellX+dx, cellY), key) != "" ||
-			jps.jump(jps.pointUtil.Point2Key(cellX, cellY+dy), key) != "" {
-			return key
+		if _, ok = jps.jump(geo.Vec2[int64]{X: pos.X + dx, Y: pos.Y}, pos); ok {
+			return
+		}
+
+		if _, ok = jps.jump(geo.Vec2[int64]{X: pos.X, Y: pos.Y + dy}, pos); ok {
+			return
 		}
 	} else {
 		if dx != 0 {
-			if (jps.finder.canWalkAt(cellX, cellY-1) && !jps.finder.canWalkAt(cellX-dx, cellY-1)) ||
-				(jps.finder.canWalkAt(cellX, cellY+1) && !jps.finder.canWalkAt(cellX-dx, cellY+1)) {
-				return key
+			if jumpCanWalk(jps.finder, pos, [8]int64{
+				0, -1, -dx, -1, 0, 1, -dx, 1,
+			}) {
+				ok = true
+				return
 			}
 		} else {
-			if (jps.finder.canWalkAt(cellX-1, cellY) && !jps.finder.canWalkAt(cellX-1, cellY-dy)) ||
-				(jps.finder.canWalkAt(cellX+1, cellY) && !jps.finder.canWalkAt(cellX+1, cellY-dy)) {
-				return key
+			if jumpCanWalk(jps.finder, pos, [8]int64{
+				-1, 0, -1, -dy, 1, 0, 1, -dy,
+			}) {
+				ok = true
+				return
 			}
 		}
 	}
 
-	if jps.finder.canWalkAt(cellX+dx, cellY) && jps.finder.canWalkAt(cellX, cellY+dy) {
-		return jps.jump(jps.pointUtil.Point2Key(cellX+dx, cellY+dy), key)
+	if jps.finder.canWalk(geo.Vec2[int64]{X: pos.X + dx, Y: pos.Y}) &&
+		jps.finder.canWalk(geo.Vec2[int64]{X: pos.X, Y: pos.Y + dy}) {
+		return jps.jump(geo.Vec2[int64]{X: pos.X + dx, Y: pos.Y + dy}, pos)
 	}
 
-	return ""
+	return
 }

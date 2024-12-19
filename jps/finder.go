@@ -20,87 +20,58 @@ const (
 	MOVE_ASTAR
 )
 
-type PointUtil interface {
-	Point2Key(x, y int64) string
-	Key2Point(string) (int64, int64)
+type MapCell interface {
+	SetParent(geo.Vec2[int64])
+	GetParent() (geo.Vec2[int64], bool)
+	SetG(uint32)
+	GetG() uint32
+	SetState(uint8)
+	GetState() uint8
 }
 
-type Cell struct {
-	parent string
-	gState uint32 // highest 8 bits is State, other 24 bits is G
-}
-
-func (cell *Cell) init() {
-	cell.gState = 0
-	cell.parent = ""
-}
-
-func (cell *Cell) SetG(value uint32) {
-	cell.gState = (cell.gState & 0xff000000) | (value & 0xffffff)
-}
-
-func (cell *Cell) GetG() uint32 {
-	return cell.gState & 0xffffff
-}
-
-func (cell *Cell) SetState(value uint8) {
-	cell.gState = (cell.gState & 0xffffff) | (uint32(value) << 24)
-}
-
-func (cell *Cell) GetState() uint8 {
-	return uint8(cell.gState >> 24)
-}
-
-func NewCell() *Cell {
-	cell := new(Cell)
-	cell.init()
-
-	return cell
+type CellMap interface {
+	Reset()
+	CalcG(srcCell, dstCell MapCell, srcPos, dstPos geo.Vec2[int64]) uint32
+	GetCell(geo.Vec2[int64]) MapCell
 }
 
 type jpsMove interface {
-	findNeighbors(key string) []string
-	jump(key, parent string) string
+	findNeighbors(geo.Vec2[int64]) []geo.Vec2[int64]
+	jump(pos geo.Vec2[int64], parent geo.Vec2[int64]) (geo.Vec2[int64], bool)
 }
 
 type Finder struct {
-	cellMap   map[string]*Cell
-	endKey    string
-	move      jpsMove
-	pointUtil PointUtil
+	cellMap CellMap
+	endPos  geo.Vec2[int64]
+	move    jpsMove
 
 	nearest bool
 	blocks  map[string]struct{}
 }
 
-func NewFinder(cellMap map[string]*Cell, pointUtil PointUtil, move int) *Finder {
+func NewFinder(cellMap CellMap, move int) *Finder {
 	finder := new(Finder)
 	finder.cellMap = cellMap
-	finder.pointUtil = pointUtil
 
 	switch move {
 	case MOVE_DIAG_ALWAYS:
 		moveInstance := new(jpsMoveDiag)
 		moveInstance.finder = finder
-		moveInstance.pointUtil = pointUtil
 		finder.move = moveInstance
 
 	case MOVE_DIAG_MOST_ONE:
 		moveInstance := new(jpsMoveDiagOne)
 		moveInstance.finder = finder
-		moveInstance.pointUtil = pointUtil
 		finder.move = moveInstance
 
 	case MOVE_DIAG_NO_OBS:
 		moveInstance := new(jpsMoveDiagNoObs)
 		moveInstance.finder = finder
-		moveInstance.pointUtil = pointUtil
 		finder.move = moveInstance
 
 	case MOVE_DIAG_NEVER:
 		moveInstance := new(jpsMoveDiagNever)
 		moveInstance.finder = finder
-		moveInstance.pointUtil = pointUtil
 		finder.move = moveInstance
 
 	case MOVE_ASTAR:
@@ -130,11 +101,9 @@ func FindOptBlocks(blocks map[string]struct{}) FindOption {
 	}
 }
 
-func (finder *Finder) Find(startKey, endKey string, options ...FindOption) []string {
-	if _, ok := finder.cellMap[startKey]; !ok {
-		logs.Warning("start.point.in.block:", startKey, len(finder.cellMap))
-
-		finder.cellMap[startKey] = NewCell()
+func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []geo.Vec2[int64] {
+	if cell := finder.cellMap.GetCell(start); cell == nil {
+		logs.Warning("start.point.in.block:", start)
 	}
 
 	finder.nearest = false
@@ -144,138 +113,109 @@ func (finder *Finder) Find(startKey, endKey string, options ...FindOption) []str
 		v(finder)
 	}
 
-	finder.reset()
+	finder.cellMap.Reset()
 
-	if endCell, ok := finder.cellMap[endKey]; (!ok || endCell.GetState() == CELL_STATE_BLOCK) && !finder.nearest {
-		logs.Error("end.point.in.block:", endKey)
+	if endCell := finder.cellMap.GetCell(end); (endCell == nil || endCell.GetState() == CELL_STATE_BLOCK) && !finder.nearest {
+		logs.Error("end.point.in.block:", end)
 	}
 
-	finder.endKey = endKey
+	finder.endPos = end
 	found := false
-	openList := []string{startKey}
+	foundNearest := false
+	nearestPos := geo.Vec2[int64]{}
+	openList := []geo.Vec2[int64]{start}
 	var nearestDistance int64 = 0
-	var nearestKey string = ""
-	endPos := finder.key2Point(endKey)
 
 	for len(openList) > 0 && !found {
-		key := openList[0]
+		pos := openList[0]
 		openList = openList[1:]
 
-		finder.cellMap[key].SetState(CELL_STATE_CLOSE)
-		if key == endKey {
+		finder.cellMap.GetCell(pos).SetState(CELL_STATE_CLOSE)
+		if pos == finder.endPos {
 			found = true
 			break
 		}
 
 		if finder.nearest {
-			cellPos := finder.key2Point(key)
-			distanceSqr := distanceSqr(cellPos, endPos)
+			distanceSqr := pos.Sub(finder.endPos).LenSqr()
 			if nearestDistance == 0 || distanceSqr < nearestDistance {
 				nearestDistance = distanceSqr
-				nearestKey = key
+				foundNearest = true
+				nearestPos = pos
 			}
 		}
 
-		openList = finder.identifySuccessors(openList, key)
+		openList = finder.identifySuccessors(openList, pos)
 	}
 
 	if !found {
-		if finder.nearest && nearestKey != "" {
-			endKey = nearestKey
+		if finder.nearest && foundNearest {
+			end = nearestPos
 		} else {
 			return nil
 		}
 	}
 
-	list := make([]string, 0)
-	for ; endKey != startKey; endKey = finder.cellMap[endKey].parent {
-		list = append(list, endKey)
+	list := make([]geo.Vec2[int64], 0)
+	for ; end != start; end, _ = finder.cellMap.GetCell(end).GetParent() {
+		list = append(list, end)
 	}
 
 	return list
 }
 
-func (finder *Finder) reset() {
-	blockLen := len(finder.blocks)
-
-	for k, v := range finder.cellMap {
-		v.init()
-
-		if blockLen > 0 {
-			if _, ok := finder.blocks[k]; ok {
-				v.SetState(CELL_STATE_BLOCK)
-			}
-		}
-	}
-}
-
-func (finder *Finder) identifySuccessors(openList []string, key string) []string {
-	src := finder.cellMap[key]
-	srcPos := finder.key2Point(key)
+func (finder *Finder) identifySuccessors(openList []geo.Vec2[int64], pos geo.Vec2[int64]) []geo.Vec2[int64] {
+	src := finder.cellMap.GetCell(pos)
 	srcG := src.GetG()
-	neighbors := finder.move.findNeighbors(key)
+	neighbors := finder.move.findNeighbors(pos)
 	for _, v := range neighbors {
-		jumpPoint := finder.move.jump(v, key)
-		if jumpPoint == "" {
+		jumpPos, ok := finder.move.jump(v, pos)
+		if !ok {
 			continue
 		}
 
-		next := finder.cellMap[jumpPoint]
+		next := finder.cellMap.GetCell(jumpPos)
 		if next.GetState() == CELL_STATE_CLOSE {
 			continue
 		}
 
-		nextPos := finder.key2Point(jumpPoint)
-		g := calcG(srcPos, nextPos)
-
+		g := finder.cellMap.CalcG(src, next, pos, jumpPos)
 		if next.GetState() != CELL_STATE_OPEN {
 			next.SetState(CELL_STATE_OPEN)
 
 			next.SetG(srcG + g)
-			next.parent = key
+			next.SetParent(pos)
 
-			openList = append(openList, jumpPoint)
+			openList = append(openList, jumpPos)
 		} else if (srcG + g) < next.GetG() {
 			next.SetG(srcG + g)
-			next.parent = key
+			next.SetParent(pos)
 		}
 	}
 
 	return openList
 }
 
-func (finder *Finder) canWalk(key string) bool {
-	if cell, ok := finder.cellMap[key]; ok && cell.GetState() != CELL_STATE_BLOCK {
+func (finder *Finder) canWalk(pos geo.Vec2[int64]) bool {
+	if cell := finder.cellMap.GetCell(pos); cell != nil && cell.GetState() != CELL_STATE_BLOCK {
 		return true
 	}
 
 	return false
 }
 
-func (finder *Finder) canWalkAt(x, y int64) bool {
-	key := finder.pointUtil.Point2Key(x, y)
-	return finder.canWalk(key)
-}
+func (finder *Finder) findDefaultNeighbors(pos geo.Vec2[int64], moveType int) []geo.Vec2[int64] {
+	sFlags := [4]bool{}
+	dFlags := [4]bool{}
 
-func (finder *Finder) findDefaultNeighbors(key string, moveType int) []string {
-	sFlags := make([]bool, 4)
-	dFlags := make([]bool, 4)
-
-	cellPos := finder.key2Point(key)
 	// up, right, down, left
-	pos := []int64{cellPos.X, cellPos.Y - 1, cellPos.X + 1, cellPos.Y, cellPos.X, cellPos.Y + 1,
-		cellPos.X - 1, cellPos.Y}
-	neighbors := make([]string, 0)
-
-	for k := range sFlags {
-		nKey := finder.pointUtil.Point2Key(pos[k*2], pos[k*2+1])
-		if finder.canWalk(nKey) {
-			neighbors = append(neighbors, nKey)
-			sFlags[k] = true
-		} else {
-			sFlags[k] = false
-		}
+	deltas := [16]int64{
+		0, -1, 0, -1,
+		1, 0, 1, 0,
+		0, 1, 0, 1,
+		-1, 0, -1, 0,
 	}
+	neighbors := finder.findNeighbors(pos, deltas[:], sFlags[:], true)
 
 	switch moveType {
 	case MOVE_DIAG_NEVER:
@@ -298,29 +238,43 @@ func (finder *Finder) findDefaultNeighbors(key string, moveType int) []string {
 	}
 
 	// leftup, rightup, rightdown, leftdown
-	pos = []int64{cellPos.X - 1, cellPos.Y - 1, cellPos.X + 1, cellPos.Y - 1, cellPos.X + 1, cellPos.Y + 1,
-		cellPos.X - 1, cellPos.Y + 1}
-
+	allDeltas := [8]int64{
+		-1, -1, 1, -1, 1, 1, -1, 1,
+	}
+	dDeltas := make([]int64, 0)
 	for k, v := range dFlags {
 		if !v {
 			continue
 		}
 
-		nKey := finder.pointUtil.Point2Key(pos[k*2], pos[k*2+1])
-		if finder.canWalk(nKey) {
-			neighbors = append(neighbors, nKey)
-		}
+		dDeltas = append(dDeltas, allDeltas[k*2], allDeltas[k*2+1], allDeltas[k*2], allDeltas[k*2+1])
+	}
+
+	dNeighbors := finder.findNeighbors(pos, dDeltas, nil, true)
+	if len(dNeighbors) > 0 {
+		neighbors = append(neighbors, dNeighbors...)
 	}
 
 	return neighbors
 }
 
-func (finder *Finder) key2Point(key string) geo.Vec2[int64] {
-	x, y := finder.pointUtil.Key2Point(key)
-	return geo.Vec2[int64]{X: x, Y: y}
-}
+func (finder *Finder) findNeighbors(pos geo.Vec2[int64], deltas []int64, flags []bool, canWalk bool) []geo.Vec2[int64] {
+	nPos := geo.Vec2[int64]{}
+	neighbors := make([]geo.Vec2[int64], 0)
 
-func calcG(cell, next geo.Vec2[int64]) uint32 {
-	delta := cell.Sub(next)
-	return uint32(delta.LenSqr())
+	for i := 0; i < len(deltas); i += 4 {
+		nPos.X = pos.X + deltas[i]
+		nPos.Y = pos.Y + deltas[i+1]
+		if finder.canWalk(nPos) == canWalk {
+			nPos.X = pos.X + deltas[i+2]
+			nPos.Y = pos.Y + deltas[i+3]
+
+			neighbors = append(neighbors, nPos)
+			if i < len(flags) {
+				flags[i] = true
+			}
+		}
+	}
+
+	return neighbors
 }
