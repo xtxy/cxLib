@@ -8,7 +8,7 @@ type jpsMoveDiag struct {
 
 func (jps *jpsMoveDiag) findNeighbors(pos geo.Vec2[int64]) []geo.Vec2[int64] {
 	var neighbors []geo.Vec2[int64]
-	parentPos, parentOk := jps.finder.cellMap.GetCell(pos).GetParent()
+	parentPos, parentOk := jps.finder.cellMap.GetParent(pos)
 
 	if parentOk {
 		dx, dy := dir(pos, parentPos)

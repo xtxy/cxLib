@@ -20,19 +20,16 @@ const (
 	MOVE_ASTAR
 )
 
-type MapCell interface {
-	SetParent(geo.Vec2[int64])
-	GetParent() (geo.Vec2[int64], bool)
-	SetG(uint32)
-	GetG() uint32
-	SetState(uint8)
-	GetState() uint8
-}
-
 type CellMap interface {
 	Reset()
-	CalcG(srcCell, dstCell MapCell, srcPos, dstPos geo.Vec2[int64]) uint32
-	GetCell(geo.Vec2[int64]) MapCell
+	CalcG(srcPos, dstPos geo.Vec2[int64]) uint32
+	SetParent(pos, parent geo.Vec2[int64])
+	GetParent(pos geo.Vec2[int64]) (geo.Vec2[int64], bool)
+	SetG(pos geo.Vec2[int64], value uint32)
+	GetG(pos geo.Vec2[int64]) uint32
+	SetState(pos geo.Vec2[int64], state uint8)
+	GetState(pos geo.Vec2[int64]) uint8
+	CanWalk(pos geo.Vec2[int64]) bool
 }
 
 type jpsMove interface {
@@ -102,7 +99,7 @@ func FindOptBlocks(blocks map[string]struct{}) FindOption {
 }
 
 func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []geo.Vec2[int64] {
-	if cell := finder.cellMap.GetCell(start); cell == nil {
+	if !finder.cellMap.CanWalk(start) {
 		logs.Warning("start.point.in.block:", start)
 	}
 
@@ -113,9 +110,9 @@ func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []
 		v(finder)
 	}
 
-	finder.cellMap.Reset()
+	defer finder.cellMap.Reset()
 
-	if endCell := finder.cellMap.GetCell(end); (endCell == nil || endCell.GetState() == CELL_STATE_BLOCK) && !finder.nearest {
+	if !finder.cellMap.CanWalk(end) || finder.cellMap.GetState(end) == CELL_STATE_BLOCK && !finder.nearest {
 		logs.Error("end.point.in.block:", end)
 	}
 
@@ -130,7 +127,7 @@ func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []
 		pos := openList[0]
 		openList = openList[1:]
 
-		finder.cellMap.GetCell(pos).SetState(CELL_STATE_CLOSE)
+		finder.cellMap.SetState(pos, CELL_STATE_CLOSE)
 		if pos == finder.endPos {
 			found = true
 			break
@@ -157,7 +154,7 @@ func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []
 	}
 
 	list := make([]geo.Vec2[int64], 0)
-	for ; end != start; end, _ = finder.cellMap.GetCell(end).GetParent() {
+	for ; end != start; end, _ = finder.cellMap.GetParent(end) {
 		list = append(list, end)
 	}
 
@@ -165,8 +162,7 @@ func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []
 }
 
 func (finder *Finder) identifySuccessors(openList []geo.Vec2[int64], pos geo.Vec2[int64]) []geo.Vec2[int64] {
-	src := finder.cellMap.GetCell(pos)
-	srcG := src.GetG()
+	srcG := finder.cellMap.GetG(pos)
 	neighbors := finder.move.findNeighbors(pos)
 	for _, v := range neighbors {
 		jumpPos, ok := finder.move.jump(v, pos)
@@ -174,22 +170,20 @@ func (finder *Finder) identifySuccessors(openList []geo.Vec2[int64], pos geo.Vec
 			continue
 		}
 
-		next := finder.cellMap.GetCell(jumpPos)
-		if next.GetState() == CELL_STATE_CLOSE {
+		if finder.cellMap.GetState(jumpPos) == CELL_STATE_CLOSE {
 			continue
 		}
 
-		g := finder.cellMap.CalcG(src, next, pos, jumpPos)
-		if next.GetState() != CELL_STATE_OPEN {
-			next.SetState(CELL_STATE_OPEN)
-
-			next.SetG(srcG + g)
-			next.SetParent(pos)
+		g := finder.cellMap.CalcG(pos, jumpPos)
+		if finder.cellMap.GetState(jumpPos) != CELL_STATE_OPEN {
+			finder.cellMap.SetState(jumpPos, CELL_STATE_OPEN)
+			finder.cellMap.SetG(jumpPos, srcG+g)
+			finder.cellMap.SetParent(jumpPos, pos)
 
 			openList = append(openList, jumpPos)
-		} else if (srcG + g) < next.GetG() {
-			next.SetG(srcG + g)
-			next.SetParent(pos)
+		} else if (srcG + g) < finder.cellMap.GetG(jumpPos) {
+			finder.cellMap.SetG(jumpPos, srcG+g)
+			finder.cellMap.SetParent(jumpPos, pos)
 		}
 	}
 
@@ -197,11 +191,7 @@ func (finder *Finder) identifySuccessors(openList []geo.Vec2[int64], pos geo.Vec
 }
 
 func (finder *Finder) canWalk(pos geo.Vec2[int64]) bool {
-	if cell := finder.cellMap.GetCell(pos); cell != nil && cell.GetState() != CELL_STATE_BLOCK {
-		return true
-	}
-
-	return false
+	return finder.cellMap.CanWalk(pos) && finder.cellMap.GetState(pos) != CELL_STATE_BLOCK
 }
 
 func (finder *Finder) findDefaultNeighbors(pos geo.Vec2[int64], moveType int) []geo.Vec2[int64] {
