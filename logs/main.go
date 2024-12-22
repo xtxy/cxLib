@@ -122,7 +122,13 @@ func New(levelStr string, options ...Option) *Logger {
 
 	logger := new(Logger)
 	logger.level = level
-	logger.kind = LOG_KIND_FILE
+
+	if logger.level == LEVEL_STDOUT {
+		logger.kind = LOG_KIND_STDOUT
+	} else {
+		logger.kind = LOG_KIND_FILE
+	}
+
 	log.SetFlags(log.Ldate | log.Lmicroseconds)
 
 	logger.dir = "."
