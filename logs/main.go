@@ -156,6 +156,10 @@ func New[T string | int](level T, options ...Option) *Logger {
 	}
 
 	if logger.kind == LOG_KIND_FILE {
+		if err := logger.createLoggerDir(); err != nil {
+			return nil
+		}
+
 		logger.createLogFile()
 	}
 

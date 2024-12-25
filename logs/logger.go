@@ -523,3 +523,16 @@ func (l *Logger) delOldLogs() {
 		}
 	}
 }
+
+func (l *Logger) createLoggerDir() error {
+	if l.dir == "." {
+		return nil
+	}
+
+	dirInfo, err := os.Stat(l.dir)
+	if nil == err && dirInfo.IsDir() {
+		return nil
+	}
+
+	return os.MkdirAll(l.dir, 0777)
+}
