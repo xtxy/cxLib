@@ -109,19 +109,31 @@ func OptErrWithCode(errWithCode bool) Option {
 	}
 }
 
-func Start(levelStr string, options ...Option) {
+func Start[T string | int](level T, options ...Option) {
 	time.Local = time.FixedZone(fmt.Sprintf("UTC%+d", Timezone), Timezone*60*60)
-	defaultLogger = New(levelStr, options...)
+	defaultLogger = New(level, options...)
 }
 
-func New(levelStr string, options ...Option) *Logger {
-	level := ParseLevel(levelStr)
-	if level == LEVEL_NONE {
+func New[T string | int](level T, options ...Option) *Logger {
+	var levelNum int
+
+	switch v := any(level).(type) {
+	case string:
+		levelNum = ParseLevel(v)
+
+	case int:
+		levelNum = v
+
+	default:
+		return nil
+	}
+
+	if levelNum <= LEVEL_NONE || levelNum > LEVEL_STDOUT {
 		return nil
 	}
 
 	logger := new(Logger)
-	logger.level = level
+	logger.level = levelNum
 
 	if logger.level == LEVEL_STDOUT {
 		logger.kind = LOG_KIND_STDOUT
