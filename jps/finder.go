@@ -258,10 +258,11 @@ func (finder *Finder) findNeighbors(pos geo.Vec2[int64], deltas []int64, flags [
 		if finder.canWalk(nPos) == canWalk {
 			nPos.X = pos.X + deltas[i+2]
 			nPos.Y = pos.Y + deltas[i+3]
-
 			neighbors = append(neighbors, nPos)
-			if i < len(flags) {
-				flags[i] = true
+
+			index := i / 4
+			if index < len(flags) {
+				flags[index] = true
 			}
 		}
 	}
