@@ -21,15 +21,28 @@ func (jps *jpsMoveDiagOne) findNeighbors(pos geo.Vec2[int64]) []geo.Vec2[int64] 
 
 			neighbors = jps.finder.findNeighbors(pos, deltas[:], flags[:], true)
 			if flags[0] || flags[1] {
-				neighbors = append(neighbors, geo.Vec2[int64]{X: pos.X + dx, Y: pos.Y + dy})
+				nPos := geo.Vec2[int64]{X: pos.X + dx, Y: pos.Y + dy}
+				if jps.finder.canWalk(nPos) {
+					neighbors = append(neighbors, nPos)
+				}
 			}
 
-			if !jps.finder.canWalk(geo.Vec2[int64]{X: pos.X - dx, Y: pos.Y}) && flags[0] {
-				neighbors = append(neighbors, geo.Vec2[int64]{X: pos.X - dx, Y: pos.Y + dy})
+			if flags[0] {
+				deltas := [4]int64{
+					-dx, 0, -dx, dy,
+				}
+				if arr := jps.finder.findNeighbors(pos, deltas[:], nil, false); len(arr) > 0 {
+					neighbors = append(neighbors, arr...)
+				}
 			}
 
-			if jps.finder.canWalk(geo.Vec2[int64]{X: pos.X, Y: pos.Y - dy}) && flags[1] {
-				neighbors = append(neighbors, geo.Vec2[int64]{X: pos.X + dx, Y: pos.Y - dy})
+			if flags[1] {
+				deltas := [4]int64{
+					0, -dy, dx, -dy,
+				}
+				if arr := jps.finder.findNeighbors(pos, deltas[:], nil, false); len(arr) > 0 {
+					neighbors = append(neighbors, arr...)
+				}
 			}
 		} else if dx == 0 {
 			deltas := [4]int64{

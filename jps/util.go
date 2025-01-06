@@ -1,6 +1,8 @@
 package jps
 
 import (
+	"math"
+	
 	"github.com/xtxy/cxlib/geo"
 )
 
@@ -19,6 +21,15 @@ func clamp(a int64) int64 {
 	}
 
 	return 0
+}
+
+func getG(pos1, pos2 geo.Vec2[int64]) float64 {
+	delta := pos1.Sub(pos2)
+	return delta.Len()
+}
+
+func getH(pos1, pos2 geo.Vec2[int64]) float64 {
+	return math.Abs(float64(pos1.X-pos2.X)) + math.Abs(float64(pos1.Y-pos2.Y))
 }
 
 func jumpCanWalk(finder *Finder, pos geo.Vec2[int64], deltas [8]int64) bool {

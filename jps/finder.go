@@ -1,8 +1,10 @@
 package jps
 
 import (
-	"github.com/xtxy/cxlib/geo"
+	"slices"
+
 	"github.com/xtxy/cxlib/logs"
+	"github.com/xtxy/cxlib/geo"
 )
 
 const (
@@ -22,13 +24,14 @@ const (
 
 type CellMap interface {
 	Reset()
-	CalcG(srcPos, dstPos geo.Vec2[int64]) uint32
 	SetParent(pos, parent geo.Vec2[int64])
 	GetParent(pos geo.Vec2[int64]) (geo.Vec2[int64], bool)
-	SetG(pos geo.Vec2[int64], value uint32)
-	GetG(pos geo.Vec2[int64]) uint32
 	SetState(pos geo.Vec2[int64], state uint8)
 	GetState(pos geo.Vec2[int64]) uint8
+	SetG(pos geo.Vec2[int64], value float64)
+	GetG(pos geo.Vec2[int64]) float64
+	SetH(pos geo.Vec2[int64], value float64)
+	GetH(pos geo.Vec2[int64]) float64
 	CanWalk(pos geo.Vec2[int64]) bool
 }
 
@@ -42,8 +45,9 @@ type Finder struct {
 	endPos  geo.Vec2[int64]
 	move    jpsMove
 
-	nearest bool
-	blocks  map[string]struct{}
+	nearest     bool
+	reversePath bool
+	blocks      map[string]struct{}
 }
 
 func NewFinder(cellMap CellMap, move int) *Finder {
@@ -98,6 +102,12 @@ func FindOptBlocks(blocks map[string]struct{}) FindOption {
 	}
 }
 
+func FindOptReversePath(reverse bool) FindOption {
+	return func(finder *Finder) {
+		finder.reversePath = reverse
+	}
+}
+
 func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []geo.Vec2[int64] {
 	if !finder.cellMap.CanWalk(start) {
 		logs.Warning("start.point.in.block:", start)
@@ -120,12 +130,13 @@ func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []
 	found := false
 	foundNearest := false
 	nearestPos := geo.Vec2[int64]{}
-	openList := []geo.Vec2[int64]{start}
+	opens := map[geo.Vec2[int64]]struct{}{
+		start: struct{}{},
+	}
 	var nearestDistance int64 = 0
 
-	for len(openList) > 0 && !found {
-		pos := openList[0]
-		openList = openList[1:]
+	for len(opens) > 0 && !found {
+		pos := finder.getMinFPos(opens)
 
 		finder.cellMap.SetState(pos, CELL_STATE_CLOSE)
 		if pos == finder.endPos {
@@ -142,7 +153,7 @@ func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []
 			}
 		}
 
-		openList = finder.identifySuccessors(openList, pos)
+		finder.identifySuccessors(opens, pos, end)
 	}
 
 	if !found {
@@ -158,10 +169,14 @@ func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []
 		list = append(list, end)
 	}
 
+	if finder.reversePath && len(list) > 0 {
+		slices.Reverse(list)
+	}
+
 	return list
 }
 
-func (finder *Finder) identifySuccessors(openList []geo.Vec2[int64], pos geo.Vec2[int64]) []geo.Vec2[int64] {
+func (finder *Finder) identifySuccessors(opens map[geo.Vec2[int64]]struct{}, pos, end geo.Vec2[int64]) {
 	srcG := finder.cellMap.GetG(pos)
 	neighbors := finder.move.findNeighbors(pos)
 	for _, v := range neighbors {
@@ -174,20 +189,20 @@ func (finder *Finder) identifySuccessors(openList []geo.Vec2[int64], pos geo.Vec
 			continue
 		}
 
-		g := finder.cellMap.CalcG(pos, jumpPos)
+		newG := getG(jumpPos, pos) + srcG
+
 		if finder.cellMap.GetState(jumpPos) != CELL_STATE_OPEN {
 			finder.cellMap.SetState(jumpPos, CELL_STATE_OPEN)
-			finder.cellMap.SetG(jumpPos, srcG+g)
+			finder.cellMap.SetG(jumpPos, newG)
+			finder.cellMap.SetH(jumpPos, getH(jumpPos, end))
 			finder.cellMap.SetParent(jumpPos, pos)
 
-			openList = append(openList, jumpPos)
-		} else if (srcG + g) < finder.cellMap.GetG(jumpPos) {
-			finder.cellMap.SetG(jumpPos, srcG+g)
+			opens[jumpPos] = struct{}{}
+		} else if newG < finder.cellMap.GetG(jumpPos) {
+			finder.cellMap.SetG(jumpPos, newG)
 			finder.cellMap.SetParent(jumpPos, pos)
 		}
 	}
-
-	return openList
 }
 
 func (finder *Finder) canWalk(pos geo.Vec2[int64]) bool {
@@ -255,17 +270,43 @@ func (finder *Finder) findNeighbors(pos geo.Vec2[int64], deltas []int64, flags [
 	for i := 0; i < len(deltas); i += 4 {
 		nPos.X = pos.X + deltas[i]
 		nPos.Y = pos.Y + deltas[i+1]
-		if finder.canWalk(nPos) == canWalk {
-			nPos.X = pos.X + deltas[i+2]
-			nPos.Y = pos.Y + deltas[i+3]
-			neighbors = append(neighbors, nPos)
 
-			index := i / 4
-			if index < len(flags) {
-				flags[index] = true
-			}
+		if finder.canWalk(nPos) != canWalk {
+			continue
+		}
+
+		nPos.X = pos.X + deltas[i+2]
+		nPos.Y = pos.Y + deltas[i+3]
+
+		if !finder.canWalk(nPos) {
+			continue
+		}
+
+		neighbors = append(neighbors, nPos)
+		index := i / 4
+		if index < len(flags) {
+			flags[index] = true
 		}
 	}
 
 	return neighbors
+}
+
+func (finder *Finder) getMinFPos(opens map[geo.Vec2[int64]]struct{}) geo.Vec2[int64] {
+	ok := false
+	var minF float64 = 0
+	var pos geo.Vec2[int64]
+
+	for k := range opens {
+		f := finder.cellMap.GetG(k) + finder.cellMap.GetH(k)
+		if !ok || f < minF {
+			ok = true
+			minF = f
+			pos = k
+		}
+	}
+
+	delete(opens, pos)
+
+	return pos
 }
