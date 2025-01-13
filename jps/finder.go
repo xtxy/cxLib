@@ -45,6 +45,9 @@ type Finder struct {
 	endPos  geo.Vec2[int64]
 	move    jpsMove
 
+	opens map[geo.Vec2[int64]]struct{}
+	start geo.Vec2[int64]
+	end geo.Vec2[int64]
 	nearest     bool
 	reversePath bool
 	blocks      map[string]struct{}
@@ -130,13 +133,13 @@ func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []
 	found := false
 	foundNearest := false
 	nearestPos := geo.Vec2[int64]{}
-	opens := map[geo.Vec2[int64]]struct{}{
+	finder.opens = map[geo.Vec2[int64]]struct{}{
 		start: struct{}{},
 	}
 	var nearestDistance int64 = 0
 
-	for len(opens) > 0 && !found {
-		pos := finder.getMinFPos(opens)
+	for len(finder.opens) > 0 && !found {
+		pos := finder.getMinFPos()
 
 		finder.cellMap.SetState(pos, CELL_STATE_CLOSE)
 		if pos == finder.endPos {
@@ -153,7 +156,7 @@ func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []
 			}
 		}
 
-		finder.identifySuccessors(opens, pos, end)
+		finder.identifySuccessors(pos, end)
 	}
 
 	if !found {
@@ -176,7 +179,17 @@ func (finder *Finder) Find(start, end geo.Vec2[int64], options ...FindOption) []
 	return list
 }
 
-func (finder *Finder) identifySuccessors(opens map[geo.Vec2[int64]]struct{}, pos, end geo.Vec2[int64]) {
+func (finder *Finder) identifySuccessors(pos, end geo.Vec2[int64]) {
+	if parent, ok := finder.cellMap.GetParent(pos); !ok {
+		deltas := [8]int64{
+			0, -1, 0, 1, -1, 0, 1, 0,
+		}
+
+		for i := 0; i < len(deltas); i += 2 {
+			finder.search(pos, deltas[i], deltas[i+1])
+		}
+	}
+
 	srcG := finder.cellMap.GetG(pos)
 	neighbors := finder.move.findNeighbors(pos)
 	for _, v := range neighbors {
@@ -197,7 +210,7 @@ func (finder *Finder) identifySuccessors(opens map[geo.Vec2[int64]]struct{}, pos
 			finder.cellMap.SetH(jumpPos, getH(jumpPos, end))
 			finder.cellMap.SetParent(jumpPos, pos)
 
-			opens[jumpPos] = struct{}{}
+			finder.opens[jumpPos] = struct{}{}
 		} else if newG < finder.cellMap.GetG(jumpPos) {
 			finder.cellMap.SetG(jumpPos, newG)
 			finder.cellMap.SetParent(jumpPos, pos)
@@ -207,6 +220,84 @@ func (finder *Finder) identifySuccessors(opens map[geo.Vec2[int64]]struct{}, pos
 
 func (finder *Finder) canWalk(pos geo.Vec2[int64]) bool {
 	return finder.cellMap.CanWalk(pos) && finder.cellMap.GetState(pos) != CELL_STATE_BLOCK
+}
+
+func (finder *Finder) search(pos geo.Vec2[int64], deltaX, deltaY int64) {
+	next := geo.Vec2[int64]{X: pos.X + deltaX, Y: pos.Y + deltaY}
+	if !finder.cellMap.CanWalk(next) {
+		return
+	}
+
+	prevPos := pos
+
+	for {
+		if !finder.cellMap.CanWalk(next) || finder.cellMap.GetState(next) == CELL_STATE_OPEN {
+			break
+		}
+
+		if _, ok := finder.isJumpPoint(prevPos, next, deltaX, deltaY); ok {
+			finder.insertOpens(next, pos)
+			break
+		}
+
+		prevPos = next
+		next.X += deltaX
+		next.Y += deltaY
+	}
+}
+
+func (finder *Finder) isJumpPoint(prevPos, pos geo.Vec2[int64], deltaX, deltaY int64) (jumpPos geo.Vec2[int64], ok bool) {
+	if !finder.cellMap.CanWalk(pos) {
+		return
+	}
+
+	if pos == finder.start || pos == finder.end {
+		jumpPos = pos
+		ok = true
+		return
+	}
+
+	if finder.hasForceNeighbor(prevPos, pos) {
+		jumpPos = pos
+		ok = true
+		return
+	}
+
+	if deltaX == 0 || deltaY == 0 {
+		return
+	}
+
+	jumpPos, ok = finder.jumpSearchHV(pos, deltaX, 0)
+	if ok {
+		return
+	}
+
+	jumpPos, ok = finder.jumpSearchHV(pos, 0, deltaY)
+	return
+}
+
+func (finder *Finder) hasForceNeighbor(prevPos, pos geo.Vec2[int64]) bool {
+	if !finder.cellMap.CanWalk(pos) {
+		return false
+	}
+
+	x, y := dir(pos, prevPos)
+	if x == 0 || y == 0 {
+		return finder.checkHVForceNeighbor(pos, x, y, 1) || finder.checkHVForceNeighbor(pos, x, y, -1)
+	} else {
+		return finder.checkDiagonalForceNeighbor(pos, x, y, 1) || finder.checkDiagonalForceNeighbor(pos, x, y, -1)
+	}
+}
+
+func (finder *Finder) checkHVForceNeighbor(pos geo.Vec2[int64], dirX, dirY, sign int64) bool {
+	obstacle := geo.Vec2[int64]{
+		X: pos.X + math.Abs(dirX) * sign, Y: pos.Y + math.Abs(dirY) * sign,
+	} 
+	neighbor := geo.Vec2[int64]{
+		X: pos.X + dirX, Y: pos.Y + dirY,
+	}
+
+	
 }
 
 func (finder *Finder) findDefaultNeighbors(pos geo.Vec2[int64], moveType int) []geo.Vec2[int64] {

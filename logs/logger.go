@@ -309,18 +309,18 @@ func (l *Logger) genJsonStr(indent bool, v []any) string {
 	var err error
 	newParams := make([]any, len(v))
 	for index, param := range v {
-		value := reflect.ValueOf(v)
+		value := reflect.ValueOf(param)
 		if !value.IsValid() || value.IsZero() {
 			newParams[index] = " "
 			continue
 		}
 
-		switch reflect.ValueOf(v).Type().Kind() {
+		switch reflect.ValueOf(param).Type().Kind() {
 		case reflect.Struct, reflect.Map, reflect.Slice, reflect.Ptr:
 			if indent {
-				slice, err = json.MarshalIndent(v, "", "    ")
+				slice, err = json.MarshalIndent(param, "", "    ")
 			} else {
-				slice, err = json.Marshal(v)
+				slice, err = json.Marshal(param)
 			}
 
 			if err != nil {
